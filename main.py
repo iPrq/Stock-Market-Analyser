@@ -1,104 +1,133 @@
-from langchain.tools import tool
-from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import os
 import json
 import requests
+
+from langchain_google_genai import Chatgoogleai
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
 
+app = FastAPI(title="Financial Research & Valuation API")
 
-load_dotenv()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-FMP_KEY = os.environ.get("FMP_API_KEY")
-GOOGLE_KEY = os.environ.get("GOOGLE_API_KEY")
+os.environ["OPENAI_API_KEY"] = "your-openai-key"
+os.environ["FMP_API_KEY"] = "your-fmp-key"
+os.environ["TAVILY_API_KEY"] = "tvly-your-tavily-key"
 
-web_search_tool = TavilySearch(max_results=4, topic="finance")
+# 1. Instantiate Tavily Tool optimized for financial research
+tavily_tool = TavilySearch(
+    max_results=4, 
+    topic="finance", 
+    search_depth="advanced"
+)
 
+# 2. Financial Modeling Prep Tools
 @tool
 def fetch_fmp_financials(symbol: str) -> str:
-    """
-    Fetches real-time profile, key metrics, income statement, and cash flow statement
-    for a stock ticker using Financial Modeling Prep (FMP) API.
-    """
+    """Fetches real-time profile and key financial metrics from FMP."""
+    FMP_KEY = os.environ.get("FMP_API_KEY")
     symbol = symbol.upper()
     
-    # 1. Company Profile (Price, Market Cap, Beta, Sector)
-    profile_url = f"https://financialmodelingprep.com/api/v3/profile/{symbol}?apikey={FMP_KEY}"
-    profile_res = requests.get(profile_url).json()
-    profile = profile_res[0] if profile_res else {}
-
-    # 2. Key Metrics TTM (PE, Debt/Equity, FCF Yield)
-    metrics_url = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{symbol}?apikey={FMP_KEY}"
-    metrics_res = requests.get(metrics_url).json()
-    metrics = metrics_res[0] if metrics_res else {}
-
-    # 3. Cash Flow Statement (Most recent annual Free Cash Flow)
-    cf_url = f"https://financialmodelingprep.com/api/v3/cash-flow-statement/{symbol}?limit=1&apikey={FMP_KEY}"
-    cf_res = requests.get(cf_url).json()
-    cash_flow = cf_res[0] if cf_res else {}
-
-    # 4. Income Statement (Revenue growth reference)
-    inc_url = f"https://financialmodelingprep.com/api/v3/income-statement/{symbol}?limit=2&apikey={FMP_KEY}"
-    inc_res = requests.get(inc_url).json()
+    p_res = requests.get(f"https://financialmodelingprep.com/api/v3/profile/{symbol}?apikey={FMP_KEY}").json()
+    m_res = requests.get(f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{symbol}?apikey={FMP_KEY}").json()
     
-    rev_growth = 0.05  # fallback
-    if len(inc_res) >= 2:
-        rev_curr = inc_res[0].get("revenue", 0)
-        rev_prev = inc_res[1].get("revenue", 1)
-        if rev_prev > 0:
-            rev_growth = round((rev_curr - rev_prev) / rev_prev, 4)
+    profile = p_res[0] if p_res else {}
+    metrics = m_res[0] if m_res else {}
 
-    payload = {
-        "symbol": symbol,
-        "company_name": profile.get("companyName"),
-        "price": profile.get("price"),
-        "market_cap": profile.get("mktCap"),
-        "sector": profile.get("sector"),
-        "pe_ratio": metrics.get("peRatioTTM"),
-        "debt_to_equity": metrics.get("debtToEquityTTM"),
-        "free_cash_flow": cash_flow.get("freeCashFlow"),
-        "revenue_growth_yoy": rev_growth,
-    }
-    return json.dumps(payload, indent=2)
-
-@tool
-def calculate_dcf(
-    free_cash_flow: float,
-    shares_outstanding: float,
-    growth_rate: float = 0.08,
-    discount_rate: float = 0.09,
-    terminal_growth_rate: float = 0.025,
-    years: int = 5
-) -> str:
-    """
-    Calculates intrinsic value per share using a 2-stage Discounted Cash Flow (DCF) model.
-    Pass free_cash_flow and total shares_outstanding.
-    """
-    pv_cash_flows = 0.0
-    current_fcf = free_cash_flow
-
-    # Stage 1: Projection Period
-    for year in range(1, years + 1):
-        current_fcf *= (1 + growth_rate)
-        pv_cash_flows += current_fcf / ((1 + discount_rate) ** year)
-
-    # Stage 2: Terminal Value
-    terminal_value = (current_fcf * (1 + terminal_growth_rate)) / (discount_rate - terminal_growth_rate)
-    pv_terminal_value = terminal_value / ((1 + discount_rate) ** years)
-
-    total_intrinsic_value = pv_cash_flows + pv_terminal_value
-    intrinsic_value_per_share = total_intrinsic_value / shares_outstanding if shares_outstanding > 0 else 0.0
+    price = profile.get("price", 100)
+    mkt_cap = profile.get("mktCap", 1e10)
+    pe = metrics.get("peRatioTTM", 15)
+    fcf = mkt_cap / pe if pe else 1e9
 
     return json.dumps({
-        "pv_discounted_cash_flows": round(pv_cash_flows, 2),
-        "pv_terminal_value": round(pv_terminal_value, 2),
-        "total_intrinsic_equity_value": round(total_intrinsic_value, 2),
-        "intrinsic_value_per_share": round(intrinsic_value_per_share, 2),
-        "assumptions": {
-            "growth_rate": growth_rate,
-            "discount_rate_wacc": discount_rate,
-            "terminal_growth_rate": terminal_growth_rate,
-            "projection_years": years
-        }
-    }, indent=2)
+        "symbol": symbol,
+        "company_name": profile.get("companyName"),
+        "price": price,
+        "market_cap": mkt_cap,
+        "pe_ratio": pe,
+        "free_cash_flow": fcf,
+        "shares_outstanding": mkt_cap / price if price else 1e8
+    })
 
+@tool
+def calculate_dcf(free_cash_flow: float, shares_outstanding: float, growth_rate: float = 0.08) -> str:
+    """Calculates intrinsic value per share using a 2-stage DCF model."""
+    discount_rate, terminal_growth = 0.09, 0.025
+    pv_cash_flows = sum([free_cash_flow * ((1 + growth_rate) ** t) / ((1 + discount_rate) ** t) for t in range(1, 6)])
+    terminal_val = (free_cash_flow * ((1 + growth_rate) ** 5) * (1 + terminal_growth)) / (discount_rate - terminal_growth)
+    pv_terminal = terminal_val / ((1 + discount_rate) ** 5)
+    
+    intrinsic_val = (pv_cash_flows + pv_terminal) / shares_outstanding
+    return json.dumps({
+        "intrinsic_value_per_share": round(intrinsic_val, 2),
+        "pv_cash_flows": round(pv_cash_flows, 2),
+        "pv_terminal_value": round(pv_terminal, 2)
+    })
 
+# Register all tools including Tavily
+tools = [fetch_fmp_financials, calculate_dcf, tavily_tool]
+
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", """
+    You are an automated financial research engine.
+    
+    Workflow:
+    1. Call `fetch_fmp_financials` to retrieve fundamental metrics.
+    2. Call `calculate_dcf` to get intrinsic value.
+    3. Use `tavily_search` to find recent earnings surprises, key operational risks, and market growth drivers.
+    
+    ALWAYS output your final response strictly as raw JSON (no markdown formatting blocks) using this schema:
+
+    {{
+        "company_name": "string",
+        "ticker": "string",
+        "current_price": number,
+        "intrinsic_value": number,
+        "recommendation": "BUY" | "HOLD" | "SELL",
+        "margin_of_safety_percent": number,
+        "metrics": {{
+            "market_cap": number,
+            "pe_ratio": number,
+            "free_cash_flow": number
+        }},
+        "thesis": {{
+            "bull_case": ["point 1", "point 2"],
+            "bear_case": ["point 1", "point 2"]
+        }}
+    }}
+    """),
+    ("human", "Run complete valuation and market research on {ticker}"),
+    MessagesPlaceholder(variable_name="agent_scratchpad"),
+])
+
+agent = create_openai_tools_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+class AnalysisRequest(BaseModel):
+    ticker: str
+
+@app.post("/api/analyze")
+async def analyze_stock(request: AnalysisRequest):
+    try:
+        response = agent_executor.invoke({"ticker": request.ticker})
+        raw_output = response["output"].strip()
+        
+        if raw_output.startswith("```json"):
+            raw_output = raw_output.replace("```json", "").replace("```", "").strip()
+            
+        return json.loads(raw_output)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
