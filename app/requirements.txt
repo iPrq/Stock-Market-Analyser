@@ -1,7 +1,9 @@
 langchain
 langchain_google_genai
 pydantic
+requests
 dotenv
 langchain_tavily
 FastAPI
 uvicorn
+langchain_classic
