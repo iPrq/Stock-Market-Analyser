@@ -1,12 +1,13 @@
+import os
+import json
+import re
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import os
-import json
-import requests
 
-from langchain_google_genai import Chatgoogleai
-from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
@@ -21,7 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-os.environ["OPENAI_API_KEY"] = "your-openai-key"
+os.environ["GOOGLE_API_KEY"] = "your-google-ai-key"
 os.environ["FMP_API_KEY"] = "your-fmp-key"
 os.environ["TAVILY_API_KEY"] = "tvly-your-tavily-key"
 
@@ -35,34 +36,45 @@ tavily_tool = TavilySearch(
 # 2. Financial Modeling Prep Tools
 @tool
 def fetch_fmp_financials(symbol: str) -> str:
-    """Fetches real-time profile and key financial metrics from FMP."""
+    """Fetches real-time profile, cash flows, and key financial metrics from FMP."""
     FMP_KEY = os.environ.get("FMP_API_KEY")
     symbol = symbol.upper()
     
+    # Profile API
     p_res = requests.get(f"https://financialmodelingprep.com/api/v3/profile/{symbol}?apikey={FMP_KEY}").json()
+    # Key Metrics API
     m_res = requests.get(f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{symbol}?apikey={FMP_KEY}").json()
+    # Cash Flow Statement API (for actual Free Cash Flow)
+    cf_res = requests.get(f"https://financialmodelingprep.com/api/v3/cash-flow-statement/{symbol}?limit=1&apikey={FMP_KEY}").json()
     
     profile = p_res[0] if p_res else {}
     metrics = m_res[0] if m_res else {}
+    cash_flow = cf_res[0] if cf_res else {}
 
-    price = profile.get("price", 100)
-    mkt_cap = profile.get("mktCap", 1e10)
-    pe = metrics.get("peRatioTTM", 15)
-    fcf = mkt_cap / pe if pe else 1e9
+    price = profile.get("price", 0.0)
+    mkt_cap = profile.get("mktCap", 0.0)
+    pe = metrics.get("peRatioTTM", 0.0)
+    fcf = cash_flow.get("freeCashFlow", 0.0)
+
+    # Fallback share count calculation if price exists
+    shares = mkt_cap / price if price > 0 else 1.0
 
     return json.dumps({
         "symbol": symbol,
-        "company_name": profile.get("companyName"),
+        "company_name": profile.get("companyName", symbol),
         "price": price,
         "market_cap": mkt_cap,
         "pe_ratio": pe,
         "free_cash_flow": fcf,
-        "shares_outstanding": mkt_cap / price if price else 1e8
+        "shares_outstanding": shares
     })
 
 @tool
 def calculate_dcf(free_cash_flow: float, shares_outstanding: float, growth_rate: float = 0.08) -> str:
     """Calculates intrinsic value per share using a 2-stage DCF model."""
+    if shares_outstanding <= 0:
+        return json.dumps({"error": "Invalid shares_outstanding provided."})
+
     discount_rate, terminal_growth = 0.09, 0.025
     pv_cash_flows = sum([free_cash_flow * ((1 + growth_rate) ** t) / ((1 + discount_rate) ** t) for t in range(1, 6)])
     terminal_val = (free_cash_flow * ((1 + growth_rate) ** 5) * (1 + terminal_growth)) / (discount_rate - terminal_growth)
@@ -75,10 +87,14 @@ def calculate_dcf(free_cash_flow: float, shares_outstanding: float, growth_rate:
         "pv_terminal_value": round(pv_terminal, 2)
     })
 
-# Register all tools including Tavily
 tools = [fetch_fmp_financials, calculate_dcf, tavily_tool]
 
-llm = ChatOpenAI(model="gpt-4o", temperature=0)
+# Updated to stable Gemini model with JSON response enforcement
+llm = ChatGoogleGenerativeAI(
+    model="gemma-4-31b",
+    temperature=0,
+    google_api_key=os.environ.get("GOOGLE_API_KEY"),
+)
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", """
@@ -86,10 +102,10 @@ prompt = ChatPromptTemplate.from_messages([
     
     Workflow:
     1. Call `fetch_fmp_financials` to retrieve fundamental metrics.
-    2. Call `calculate_dcf` to get intrinsic value.
-    3. Use `tavily_search` to find recent earnings surprises, key operational risks, and market growth drivers.
+    2. Call `calculate_dcf` to get intrinsic value per share.
+    3. Use `tavily_search` to find recent earnings surprises, key operational risks, and growth drivers.
     
-    ALWAYS output your final response strictly as raw JSON (no markdown formatting blocks) using this schema:
+    ALWAYS output your final response strictly as raw JSON matching this schema:
 
     {{
         "company_name": "string",
@@ -113,7 +129,7 @@ prompt = ChatPromptTemplate.from_messages([
     MessagesPlaceholder(variable_name="agent_scratchpad"),
 ])
 
-agent = create_openai_tools_agent(llm, tools, prompt)
+agent = create_tool_calling_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
 class AnalysisRequest(BaseModel):
@@ -125,9 +141,11 @@ async def analyze_stock(request: AnalysisRequest):
         response = agent_executor.invoke({"ticker": request.ticker})
         raw_output = response["output"].strip()
         
-        if raw_output.startswith("```json"):
-            raw_output = raw_output.replace("```json", "").replace("```", "").strip()
+        # Robust Regex cleanup for Markdown block wrapping
+        cleaned_output = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_output, flags=re.MULTILINE).strip()
             
-        return json.loads(raw_output)
+        return json.loads(cleaned_output)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Failed to parse structured JSON from model response.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
