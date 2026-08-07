@@ -23,139 +23,7 @@ type AnalysisResponse = {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const POPULAR_TICKERS = ["AAPL", "NVDA", "MSFT", "TSLA", "AMZN"];
 
-// Rich offline mock dataset matching the style and numbers in screenshots
-const MOCK_DATASET: Record<string, AnalysisResponse> = {
-  AAPL: {
-    company_name: "Apple Inc.",
-    ticker: "AAPL",
-    current_price: 313.30,
-    intrinsic_value: 145.50,
-    recommendation: "SELL",
-    margin_of_safety_percent: -115.0,
-    metrics: { market_cap: 2800000000000, pe_ratio: 32.5, free_cash_flow: 99000000000 },
-    company_profile: { sector: "Technology", industry: "Consumer Electronics", image: "" },
-    thesis: {
-      summary: "Current market pricing for AAPL reflects a significant premium over calculated intrinsic value models. The forward P/E ratio of 32.5 indicates massive growth expectations that historic free cash flow trajectories do not fully support in a macroeconomic tightening cycle.",
-      recommendation_rationale: "While the underlying business remains robust with high institutional ownership and brand loyalty, the margin of safety is entirely eroded at current levels. Risk-adjusted returns suggest capital is better deployed in undervalued sectors until a reversion to the mean occurs.",
-      bull_case: [
-        "Service revenue high-margin acceleration continues to outpace hardware deceleration.",
-        "Strong customer retention and ecosystem lock-in allows successful price hikes on services and subscription products."
-      ],
-      bear_case: [
-        "Hardware sales growth plateauing across key geographic segments including Greater China.",
-        "Regulatory headwinds in the EU and US target Apple's lucrative App Store commission model."
-      ],
-      sources: [
-        { title: "Apple Inc. Q3 2024 Financial Results", url: "https://www.apple.com/newsroom/" },
-        { title: "SEC Form 10-K Apple Inc.", url: "https://www.sec.gov" }
-      ]
-    }
-  },
-  NVDA: {
-    company_name: "NVIDIA Corporation",
-    ticker: "NVDA",
-    current_price: 120.00,
-    intrinsic_value: 160.00,
-    recommendation: "BUY",
-    margin_of_safety_percent: 25.0,
-    metrics: { market_cap: 3000000000000, pe_ratio: 65.2, free_cash_flow: 45000000000 },
-    company_profile: { sector: "Technology", industry: "Semiconductors", image: "" },
-    thesis: {
-      summary: "NVIDIA stands as the dominant infrastructure provider for the artificial intelligence revolution. Its proprietary CUDA software ecosystem coupled with cutting-edge GPU hardware creates an exceptionally wide competitive moat.",
-      recommendation_rationale: "Despite a high forward P/E ratio, the company's triple-digit earnings growth and expanding free cash flow margins support an intrinsic value estimate of $160 per share, offering a solid 25% margin of safety.",
-      bull_case: [
-        "Hyperscalers continue to aggressively expand data center capital expenditures on AI computing hardware.",
-        "Blackwell architecture launch sees unprecedented demand, securing supply agreements for 12+ months."
-      ],
-      bear_case: [
-        "Growing domestic chip design capabilities in China challenge NVIDIA's market share.",
-        "Supply chain bottlenecks at TSMC limit packaging capacity for advanced AI chips."
-      ],
-      sources: [
-        { title: "NVIDIA Corp. Blackwell Architecture Demand", url: "https://nvidianews.nvidia.com/" },
-        { title: "SEC Form 10-K NVIDIA", url: "https://www.sec.gov" }
-      ]
-    }
-  },
-  MSFT: {
-    company_name: "Microsoft Corporation",
-    ticker: "MSFT",
-    current_price: 410.00,
-    intrinsic_value: 480.00,
-    recommendation: "BUY",
-    margin_of_safety_percent: 14.5,
-    metrics: { market_cap: 3100000000000, pe_ratio: 35.8, free_cash_flow: 70000000000 },
-    company_profile: { sector: "Technology", industry: "Software - Infrastructure", image: "" },
-    thesis: {
-      summary: "Microsoft is successfully commercializing generative AI across its enterprise product suite, primarily through Azure OpenAI and Copilot integrations. This is driving accelerated cloud growth and operating leverage.",
-      recommendation_rationale: "Azure's growth acceleration combined with steady SaaS revenue expansions makes MSFT an attractive buy-and-hold candidate with a stable double-digit margin of safety.",
-      bull_case: [
-        "Azure AI services demand continues to accelerate cloud migration cycles across global enterprise customers.",
-        "Office 365 Copilot adoption increases average revenue per user (ARPU) by 20-30%."
-      ],
-      bear_case: [
-        "Higher-than-expected capital expenditures on AI data centers compress near-term margins.",
-        "Anti-trust scrutiny regarding cloud licenses and partnership structures with OpenAI."
-      ],
-      sources: [
-        { title: "Microsoft Cloud Earnings Report", url: "https://www.microsoft.com/investor" },
-        { title: "SEC Form 10-K Microsoft", url: "https://www.sec.gov" }
-      ]
-    }
-  },
-  TSLA: {
-    company_name: "Tesla, Inc.",
-    ticker: "TSLA",
-    current_price: 210.00,
-    intrinsic_value: 200.00,
-    recommendation: "HOLD",
-    margin_of_safety_percent: -5.0,
-    metrics: { market_cap: 650000000000, pe_ratio: 55.4, free_cash_flow: 8000000000 },
-    company_profile: { sector: "Consumer Cyclical", industry: "Auto Manufacturers", image: "" },
-    thesis: {
-      summary: "Tesla is transitioning from an electric vehicle manufacturer to an AI and robotics company. While its long-term potential in Full Self-Driving (FSD) and Optimus is massive, current automotive sales face near-term macro headwinds.",
-      recommendation_rationale: "The current valuation is fairly valued at $210, reflecting balanced risks between automotive margin contraction and prospective autonomous network revenues.",
-      bull_case: [
-        "FSD version 12 wide release accelerates subscription take-rate and licensing deals.",
-        "Energy storage division deployment grows at 100%+ year-over-year, improving overall mix and gross margins."
-      ],
-      bear_case: [
-        "Increased competition and price cuts compress automotive gross margins below 15%.",
-        "Delayed rollouts of cheaper models and autonomous robotaxi networks."
-      ],
-      sources: [
-        { title: "Tesla Q2 Investor Relations Deck", url: "https://ir.tesla.com" },
-        { title: "SEC Form 10-K Tesla", url: "https://www.sec.gov" }
-      ]
-    }
-  },
-  AMZN: {
-    company_name: "Amazon.com, Inc.",
-    ticker: "AMZN",
-    current_price: 180.00,
-    intrinsic_value: 215.00,
-    recommendation: "BUY",
-    margin_of_safety_percent: 16.3,
-    metrics: { market_cap: 1900000000000, pe_ratio: 40.1, free_cash_flow: 35000000000 },
-    company_profile: { sector: "Consumer Cyclical", industry: "Internet Retail", image: "" },
-    thesis: {
-      summary: "Amazon benefits from a double tailwind: stabilization and re-acceleration of AWS cloud spending, alongside continuous efficiency improvements in its domestic fulfillment network.",
-      recommendation_rationale: "Operating margin expansion driven by high-margin advertising and AWS growth underpins our $215 intrinsic value estimate, representing an attractive entry point.",
-      bull_case: [
-        "AWS AI integrations attract enterprise workloads, accelerating cloud growth back to 18%+.",
-        "High-margin digital advertising services continue double-digit expansion."
-      ],
-      bear_case: [
-        "Regulatory challenges from the FTC seeking to break up core marketplace operations.",
-        "Consumer spending slowdown impacts physical and e-commerce retail volumes."
-      ],
-      sources: [
-        { title: "Amazon Q2 2024 Financial Results", url: "https://www.aboutamazon.com/ir" },
-        { title: "SEC Form 10-K Amazon", url: "https://www.sec.gov" }
-      ]
-    }
-  }
-};
+
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
@@ -266,34 +134,19 @@ export default function Home() {
     setAnalysis(null);
 
     try {
-      // 1. Try to fetch from the local backend first
       const response = await fetch(`${API_BASE_URL}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ticker: normalizedTicker }),
       });
       
-      if (response.ok) {
-        const data = await response.json();
-        setAnalysis(data as AnalysisResponse);
-      } else {
-        // Fallback to offline mock database if API fails or returns error
-        if (MOCK_DATASET[normalizedTicker]) {
-          // Add a tiny artificial delay for premium skeleton feel
-          await new Promise((resolve) => setTimeout(resolve, 800));
-          setAnalysis(MOCK_DATASET[normalizedTicker]);
-        } else {
-          throw new Error(getErrorMessage(await response.text()) || "Unable to analyze this stock.");
-        }
+      if (!response.ok) {
+        throw new Error(getErrorMessage(await response.text()) || "Unable to analyze this stock.");
       }
+      const data = await response.json();
+      setAnalysis(data as AnalysisResponse);
     } catch (caughtError) {
-      // If network fetch fails, check mock dataset as secondary fallback
-      if (MOCK_DATASET[normalizedTicker]) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        setAnalysis(MOCK_DATASET[normalizedTicker]);
-      } else {
-        setError(caughtError instanceof Error ? caughtError.message : "Something went wrong while analyzing this stock.");
-      }
+      setError(caughtError instanceof Error ? caughtError.message : "Something went wrong while analyzing this stock.");
     } finally {
       setIsLoading(false);
     }
@@ -480,14 +333,28 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col overflow-hidden bg-black text-[#e5e2e1] font-sans selection:bg-emerald-500/30">
+    <div className="relative flex min-h-screen flex-col overflow-hidden bg-black text-[#e5e2e1] font-sans selection:bg-emerald-500/30">
+      {/* Video Background */}
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="absolute inset-0 h-full w-full object-cover pointer-events-none z-0 opacity-45"
+      >
+        <source src="/16377047_3840_2160_50fps.mp4" type="video/mp4" />
+      </video>
+
+      {/* Dark Ambient overlay to ensure contrast and let video show through */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/25 to-black/90 z-10 pointer-events-none" />
+
       {/* Header */}
-      <header className="mx-auto w-full max-w-7xl px-6 py-6 md:px-8">
+      <header className="relative mx-auto w-full max-w-7xl px-6 py-6 md:px-8 z-20">
         <span className="text-xl font-extrabold tracking-tight text-white">StockAny</span>
       </header>
 
       {/* Main Container */}
-      <main className="mx-auto flex w-full max-w-4xl flex-1 items-center justify-center px-6 py-12 md:px-8 lg:py-24">
+      <main className="relative mx-auto flex w-full max-w-4xl flex-1 items-center justify-center px-6 py-12 md:px-8 lg:py-24 z-20">
         
         {/* Hero Content Centered */}
         <section className="flex flex-col items-center text-center w-full">
@@ -501,7 +368,7 @@ export default function Home() {
           {/* Analyze Form input bar */}
           <form 
             onSubmit={onSubmit} 
-            className="mt-8 flex w-full max-w-xl rounded-full border border-neutral-800 bg-neutral-900/40 p-1.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-400/20 transition-all duration-300"
+            className="mt-8 flex w-full max-w-xl rounded-full border border-neutral-800 bg-neutral-950/70 backdrop-blur-md p-1.5 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-400/20 transition-all duration-300"
           >
             <div className="flex items-center pl-4 pr-2 text-neutral-500">
               <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
@@ -532,7 +399,7 @@ export default function Home() {
               <button 
                 onClick={() => void analyzeStock(symbol)} 
                 disabled={isLoading} 
-                className="rounded-full border border-neutral-800 bg-[#131313] px-4 py-2 text-xs font-bold text-neutral-300 transition duration-200 hover:border-emerald-400 hover:text-emerald-300 hover:bg-black disabled:opacity-50" 
+                className="rounded-full border border-neutral-800 bg-[#131313]/90 backdrop-blur-sm px-4 py-2 text-xs font-bold text-neutral-300 transition duration-200 hover:border-emerald-400 hover:text-emerald-300 hover:bg-black disabled:opacity-50" 
                 key={symbol}
               >
                 {symbol}
@@ -548,7 +415,7 @@ export default function Home() {
         </section>
       </main>
 
-      <Footer />
+      <Footer transparent />
     </div>
   );
 }
@@ -592,9 +459,9 @@ function ThesisCard({ title, icon, points, tone }: { title: string; icon: string
   );
 }
 
-function Footer() {
+function Footer({ transparent }: { transparent?: boolean }) {
   return (
-    <footer className="mt-auto border-t border-neutral-900 bg-black">
+    <footer className={`mt-auto border-t border-neutral-900/50 ${transparent ? 'bg-transparent' : 'bg-black'} z-20 relative`}>
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 px-6 py-6 md:px-8 md:flex-row text-xs text-neutral-500">
         <span className="text-base font-extrabold text-white tracking-tight">
           StockAny <span className="text-emerald-400">AI</span>

@@ -117,7 +117,10 @@ def fetch_fmp_financials(symbol: str) -> str:
         "market_cap": mkt_cap,
         "pe_ratio": pe,
         "free_cash_flow": fcf,
-        "shares_outstanding": shares
+        "shares_outstanding": shares,
+        "sector": profile.get("sector", ""),
+        "industry": profile.get("industry", ""),
+        "image": profile.get("image", ""),
     })
 
 @tool
@@ -253,7 +256,13 @@ async def analyze_stock(request: AnalysisRequest):
             config={"callbacks": [model_request_callback]},
         )
         raw_output = _extract_model_text(response.content)
-        return _parse_model_json(raw_output)
+        analysis = _parse_model_json(raw_output)
+        analysis["company_profile"] = {
+            "sector": financials["sector"],
+            "industry": financials["industry"],
+            "image": financials["image"],
+        }
+        return analysis
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=500, detail="Failed to parse structured JSON from model response.")
     except requests.RequestException as exc:
