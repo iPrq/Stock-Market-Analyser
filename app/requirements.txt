@@ -3,3 +3,5 @@ langchain_google_genai
 pydantic
 dotenv
 langchain_tavily
+FastAPI
+uvicorn
