@@ -1,4 +1,5 @@
 langchain
-langchain-google-genai
+langchain_google_genai
 pydantic
 dotenv
+langchain_tavily

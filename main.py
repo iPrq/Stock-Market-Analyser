@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import os
 import json
 import requests
-
+from langchain_tavily import TavilySearch
 
 
 load_dotenv()
@@ -11,6 +11,7 @@ load_dotenv()
 FMP_KEY = os.environ.get("FMP_API_KEY")
 GOOGLE_KEY = os.environ.get("GOOGLE_API_KEY")
 
+web_search_tool = TavilySearch(max_results=4, topic="finance")
 
 @tool
 def fetch_fmp_financials(symbol: str) -> str:
@@ -99,3 +100,5 @@ def calculate_dcf(
             "projection_years": years
         }
     }, indent=2)
+
+
