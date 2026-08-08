@@ -277,7 +277,7 @@ export default function Home() {
                   </p>
                 </div>
                 <span className="w-fit rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-[10px] font-semibold text-emerald-400 flex items-center gap-1">
-                  ✦ AI research summary
+                  AI research summary
                 </span>
               </div>
 
