@@ -87,7 +87,6 @@ def _fmp_get(endpoint: str, **params: str | int) -> list[dict]:
 
 
 # 2. Financial Modeling Prep Tools
-@tool
 def fetch_fmp_financials(symbol: str) -> str:
     """Fetches real-time profile, cash flows, and key financial metrics from FMP."""
     symbol = symbol.upper()
@@ -123,7 +122,6 @@ def fetch_fmp_financials(symbol: str) -> str:
         "image": profile.get("image", ""),
     })
 
-@tool
 def calculate_dcf(free_cash_flow: float, shares_outstanding: float, growth_rate: float = 0.08) -> str:
     """Calculates intrinsic value per share using a 2-stage DCF model."""
     if shares_outstanding <= 0:
@@ -152,7 +150,8 @@ llm = ChatGoogleGenerativeAI(
 )
 
 class AnalysisRequest(BaseModel):
-    ticker: str
+    ticker: str 
+    
 
 
 def _extract_model_text(output: object) -> str:
@@ -271,3 +270,4 @@ async def analyze_stock(request: AnalysisRequest):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
